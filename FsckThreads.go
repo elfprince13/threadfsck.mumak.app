@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"syscall/js"
@@ -18,6 +19,7 @@ func fetchOnePostFactory(ctx context.Context, dir *identity.BaseDirectory) func(
 	hostCache := map[syntax.DID]xrpc.Client{}
 
 	return func(did syntax.DID, rkey syntax.RecordKey) (*bsky.FeedPost, error) {
+		fmt.Println("fetching ", did.String(), "/", rkey.String())
 		pdsClient, ok := hostCache[did]
 		if !ok {
 			doc, err := dir.ResolveDID(ctx, did)
@@ -47,6 +49,7 @@ func identResolverFactory(ctx context.Context, resolverClient *xrpc.Client) func
 	handleCache := map[syntax.AtIdentifier]syntax.DID{}
 
 	return func(atIdent syntax.AtIdentifier) (syntax.DID, error) {
+		fmt.Println("resolving ", atIdent.String())
 		did, ok := handleCache[atIdent]
 		if ok {
 			return did, nil
@@ -158,6 +161,8 @@ func fetchThreadJSAsync(this js.Value, promiseArgs []js.Value) interface{} {
 		resolve := promiseHandlers[0]
 		reject := promiseHandlers[1]
 		errorConstructor := js.Global().Get("Error")
+		arrayConstructor := js.Global().Get("Array")
+		uint8ArrayConstructor := js.Global().Get("Uint8Array")
 
 		go func() {
 			defer func() {
@@ -189,7 +194,22 @@ func fetchThreadJSAsync(this js.Value, promiseArgs []js.Value) interface{} {
 				if len(thread) < 1 {
 					reject.Invoke(errorObject)
 				} else {
-					resolve.Invoke(js.ValueOf(thread), err)
+					postCount := len(thread)
+					// must be generic because apparently ... spreading doesn't lower types as needed?
+					threadJS := make([](any), 0, postCount)
+					for postCount = postCount - 1; postCount >= 0; postCount = postCount - 1 {
+						postBytes, err := json.Marshal(thread[postCount])
+						if err != nil {
+							panic(err)
+						}
+						var postBytesJS js.Value = uint8ArrayConstructor.New(len(postBytes))
+						js.CopyBytesToJS(postBytesJS, postBytes)
+						threadJS = append(threadJS, postBytesJS)
+					}
+					var threadBytesJS js.Value = arrayConstructor.New(threadJS...)
+					var returnVal = arrayConstructor.New(threadBytesJS, errorObject)
+
+					resolve.Invoke(returnVal)
 				}
 
 			}
