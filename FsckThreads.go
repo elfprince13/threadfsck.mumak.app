@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"os"
 	"syscall/js"
 
 	"github.com/bluesky-social/indigo/api/atproto"
@@ -225,7 +226,9 @@ func fetchThreadJSAsync(this js.Value, promiseArgs []js.Value) interface{} {
 func main() {
 	c := make(chan struct{}, 0)
 
-	js.Global().Set("FsckThreads_FetchThread", js.FuncOf(fetchThreadJSAsync))
+	targetObjName := os.Getenv("BIND_FUNCTIONS_TO_GLOBAL")
+	fsckThreadsObj := js.Global().Get(targetObjName)
+	fsckThreadsObj.Set("fetchThread", js.FuncOf(fetchThreadJSAsync))
 
 	<-c
 
