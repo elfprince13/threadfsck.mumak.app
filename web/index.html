@@ -14,7 +14,7 @@
           throw new Error("Go runtime exited abnormally with code " + code);
         }
       };
-      WebAssembly.instantiateStreaming(fetch("app.wasm"), go.importObject).then(
+      WebAssembly.instantiateStreaming(fetch("built-go/app.wasm"), go.importObject).then(
         (result) => {
           go.run(result.instance);
         }
