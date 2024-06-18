@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html>
+	<head>
+		<meta charset="utf-8"/>
+        <!--
+-->
+		<script src="wasm_exec.js"></script>
+		<script>
+			const go = new Go();
+            go.exit = (code) => {
+                if (code !== 0) {
+                    throw new Error("Go runtime exited abnormally with code " + code)
+                }
+            }
+			WebAssembly.instantiateStreaming(fetch("app.wasm"), go.importObject).then((result) => {
+				go.run(result.instance);
+			});
+		</script>
+<!--   
+ -->
+	</head>
+	<body>
+<!--    
+    <blockquote class="bluesky-embed" data-bluesky-uri="at://did:plc:jxcabn5oqg4xlpflgoy4rmxr/app.bsky.feed.post/3ktq3dw6w2x2e" data-bluesky-cid="bafyreiexwjuxztv7szi52ognnghnfyeuszvwlmcb4syjoza2sed6vxzczu">
+            <p lang="en">
+                I’m like 90% sure someone is snoring in this coworking space
+            </p>
+            &mdash; Thomas Dickerson (<a href="https://bsky.app/profile/did:plc:jxcabn5oqg4xlpflgoy4rmxr?ref_src=embed">@elfprince13.mumak.app</a>)
+            <a href="https://bsky.app/profile/did:plc:jxcabn5oqg4xlpflgoy4rmxr/post/3ktq3dw6w2x2e?ref_src=embed">May 30, 2024 at 2:49 PM</a>
+        </blockquote>
+        <script async src="https://embed.bsky.app/static/embed.js" charset="utf-8"></script>
+-->
+    </body>
+</html>
