@@ -463,10 +463,11 @@ function GoImportObject(self : Go) {
 		}
 	};
 }
-
+export type GoEnvVars = { [key:string] : string }
+export type GoArgs = Array<string>
 export class Go {
 	argv: Array<string> = ["js"];
-	env: { [key:string] : string } = {}
+	env: GoEnvVars = {}
 	exit = (code: number) => {
 		if (code !== 0) {
 			console.warn("exit code:", code);
