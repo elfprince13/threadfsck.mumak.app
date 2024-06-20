@@ -156,6 +156,9 @@ func fetchThreadJSAsync(this js.Value, promiseArgs []js.Value) interface{} {
 				fmt.Println(("panic occurred: "), err)
 			}
 		}()
+		if len(promiseHandlers) != 2 {
+			panic(fmt.Errorf("Incorrect number of promise handlers, expected 2 - got %d", len(promiseHandlers)))
+		}
 		// there's nothing we can do if these don't follow the API for promise
 		// mysterious runtime error will likely manifest.
 		// cf. https://stackoverflow.com/questions/67437284/how-to-throw-js-error-from-go-web-assembly

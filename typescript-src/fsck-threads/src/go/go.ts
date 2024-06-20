@@ -18,6 +18,7 @@ async function loadGoWasm(wasmUrl: string, argv?: GoArgs, env?: GoEnvVars): Prom
       };
       // instance -> result.instance if we lose the vite dependency
       return WebAssembly.instantiateStreaming(fetch(wasmUrl), go.importObject).then( result => {
+        console.log("Running go now!")
         go.run(result.instance)
       })
   }

@@ -585,9 +585,9 @@ export class Go {
 		}
 	}
 
-	_makeFuncWrapper(id : number, ...args : any[]) {
+	_makeFuncWrapper(id : number) {
 		const go: Go = this;
-		return function () {
+		return function (...args : any[]) {
 			const event = { id: id, this: go, args: args, result: (undefined as any) };
 			go._pendingEvent = event;
 			go._resume();

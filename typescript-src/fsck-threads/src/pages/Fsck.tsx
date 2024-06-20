@@ -40,9 +40,13 @@ export const FsckThread = () => {
                             // only if we assign it to a local
                             const fetchThread = window.FsckThreads.fetchThread
                             try {
-                                return <>{lazy(() => fetchThread(handle || "", rkey || "").then(result => {
-                                    return {default : () => (<div className="alert alert-success">Got the thread!</div>) }
-                                }))}</>
+                                return <>{lazy(() => {
+                                    const fetchPromise = fetchThread(handle || "", rkey || "");
+                                    const compPromise = fetchPromise.then(result => {
+                                        return {default : () => (<div className="alert alert-success">Got the thread!</div>) }
+                                    });
+                                    return compPromise;
+                                })}</>
                             } catch (err : any) {
                                 if (err instanceof Error) {
                                     return (<div className="alert alert-danger" role="alert">Something blew up while accessing the thread: {err.name} </div>)
