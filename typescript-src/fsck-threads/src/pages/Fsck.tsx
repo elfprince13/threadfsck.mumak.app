@@ -1,5 +1,6 @@
 import { useParams } from 'react-router-dom'
 import { useGo } from '../go/go'
+import { lazy } from 'react'
 
 // depends on vite's webassembly support
 
@@ -19,7 +20,7 @@ window.FsckThreads = {}
 export const FsckThread = () => {
     const { handle } = useParams<"handle">() || "";
     const { rkey } = useParams<"rkey">() || "";
-    let bskyURL = useMemo(() => `bsky://profile/${handle}/post/${rkey}`, [handle, rkey])
+    const bskyURL = useMemo(() => `bsky://profile/${handle}/post/${rkey}`, [handle, rkey])
 
     const goIsLoading = useGo(wasmUrl, [], {BIND_FUNCTIONS_TO_GLOBAL : "FsckThreads"})
     console.log("have access to rkey and handle now!")
@@ -35,9 +36,13 @@ export const FsckThread = () => {
                     : ((window.FsckThreads.fetchThread === undefined)
                         ? (<div className="alert alert-danger" role="alert">Dynamic linking of Go module failed. Could not access fetchThread() </div>)
                         : (() => {
+                            // apparently type checking figures out this can't be undefined
+                            // only if we assign it to a local
+                            const fetchThread = window.FsckThreads.fetchThread
                             try {
-                                //const [ thread, err ] = await window.FsckThreads.fetchThread(handle || "", rkey || "");
-                                return (<div className="alert alert-success">Got the thread!</div>)
+                                return <>{lazy(() => fetchThread(handle || "", rkey || "").then(result => {
+                                    return {default : () => (<div className="alert alert-success">Got the thread!</div>) }
+                                }))}</>
                             } catch (err : any) {
                                 if (err instanceof Error) {
                                     return (<div className="alert alert-danger" role="alert">Something blew up while accessing the thread: {err.name} </div>)
