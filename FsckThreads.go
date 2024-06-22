@@ -81,60 +81,67 @@ func identResolverFactory(ctx context.Context, resolverClient *xrpc.Client) func
 	}
 }
 
-// return the thread in reverse order (leaf to furthest accessible ancestor)
-func fetchThreadInternal(fetchOnePost func(syntax.DID, syntax.RecordKey) (*bsky.FeedPost, error),
-	resolveIdent func(syntax.AtIdentifier) (syntax.DID, error),
-	did syntax.DID, rkey syntax.RecordKey) ([](*bsky.FeedPost), error) {
-
-	outputPosts := make([](*bsky.FeedPost), 0, 8)
-
-	post, err := fetchOnePost(did, rkey)
-	if err != nil {
-		fmt.Println("Post fetch failed: ", err)
-		return outputPosts, err
-	} else {
-		outputPosts = append(outputPosts, post)
-	}
-
-	for post.Reply != nil {
-		maybeParentURI := post.Reply.Parent.Uri
-		parentURI, err := syntax.ParseATURI(maybeParentURI)
-		if err != nil {
-			fmt.Println("not a syntactically valid at uri: ", maybeParentURI)
-			return outputPosts, err
-		}
-		identity := syntax.ATURI.Authority(parentURI)
-		rkey = syntax.ATURI.RecordKey(parentURI)
-		did, err = resolveIdent(identity)
-		if err != nil {
-			fmt.Println("could not resolve at-identity: ", err)
-			return outputPosts, err
-		}
-		post, err = fetchOnePost(did, rkey)
-		if err != nil {
-			fmt.Println("Post fetch failed: ", err)
-			return outputPosts, err
-		} else {
-			outputPosts = append(outputPosts, post)
-		}
-	}
-
-	return outputPosts, nil
+type LazyPostList struct {
+	post        *bsky.FeedPost // post should never be nil, we just don't want to copy
+	maybeParent *func() (*LazyPostList, error)
 }
 
 // return the thread in reverse order (leaf to furthest accessible ancestor)
-func fetchThread(rawIdent string, rawRkey string) ([](*bsky.FeedPost), error) {
+func fetchThreadInternal(fetchOnePost func(syntax.DID, syntax.RecordKey) (*bsky.FeedPost, error),
+	resolveIdent func(syntax.AtIdentifier) (syntax.DID, error),
+	did syntax.DID, rkey syntax.RecordKey) func() (*LazyPostList, error) {
+
+	//outputPosts := make([](*bsky.FeedPost), 0, 8)
+
+	return func() (*LazyPostList, error) {
+		post, err := fetchOnePost(did, rkey)
+		if err != nil {
+			fmt.Println("Post fetch failed: ", err)
+			return nil, err
+		} else {
+			var maybeParent *func() (*LazyPostList, error) = nil
+			if post.Reply != nil {
+				parentGenerator := func() (*LazyPostList, error) {
+					maybeParentURI := post.Reply.Parent.Uri
+					parentURI, err := syntax.ParseATURI(maybeParentURI)
+					if err != nil {
+						fmt.Println("not a syntactically valid at uri: ", maybeParentURI)
+						return nil, err
+					}
+					identity := syntax.ATURI.Authority(parentURI)
+					rkey = syntax.ATURI.RecordKey(parentURI)
+					did, err = resolveIdent(identity)
+					if err != nil {
+						fmt.Println("could not resolve at-identity: ", err)
+						return nil, err
+					}
+					return fetchThreadInternal(fetchOnePost, resolveIdent, did, rkey)()
+				}
+				maybeParent = &parentGenerator
+			}
+			return (&LazyPostList{
+				post,
+				maybeParent,
+			}), nil
+			//outputPosts = append(outputPosts, post)
+		}
+	}
+
+	//return outputPosts, nil
+}
+
+func fetchThread(rawIdent string, rawRkey string) func() (*LazyPostList, error) {
 	ctx := context.Background()
 	resolveIdent := identResolverFactory(ctx, &xrpc.Client{Client: http.DefaultClient, Host: "https://public.api.bsky.app"})
 	atIdent, err := syntax.ParseAtIdentifier(rawIdent)
 	if err != nil {
 		fmt.Println("not a syntactically valid at identifier: ", rawIdent)
-		return nil, err
+		return func() (*LazyPostList, error) { return nil, err }
 	}
 	did, err := resolveIdent(*atIdent)
 	if err != nil {
 		fmt.Println("profile fetch failed: ", err)
-		return nil, err
+		return func() (*LazyPostList, error) { return nil, err }
 	}
 
 	dir := identity.BaseDirectory{}
@@ -142,7 +149,7 @@ func fetchThread(rawIdent string, rawRkey string) ([](*bsky.FeedPost), error) {
 	rkey, err := syntax.ParseRecordKey(rawRkey)
 	if err != nil {
 		fmt.Println("not a syntactically valid rkey: ", rkey)
-		return nil, err
+		return func() (*LazyPostList, error) { return nil, err }
 	}
 
 	fetchOnePost := fetchOnePostFactory(ctx, &dir)
@@ -150,80 +157,88 @@ func fetchThread(rawIdent string, rawRkey string) ([](*bsky.FeedPost), error) {
 }
 
 func fetchThreadJSAsync(this js.Value, promiseArgs []js.Value) interface{} {
-	handler := js.FuncOf(func(innerThis js.Value, promiseHandlers []js.Value) interface{} {
-		defer func() {
-			if err := recover(); err != nil {
-				fmt.Println(("panic occurred: "), err)
-			}
-		}()
-		if len(promiseHandlers) != 2 {
-			panic(fmt.Errorf("Incorrect number of promise handlers, expected 2 - got %d", len(promiseHandlers)))
-		}
-		// there's nothing we can do if these don't follow the API for promise
-		// mysterious runtime error will likely manifest.
-		// cf. https://stackoverflow.com/questions/67437284/how-to-throw-js-error-from-go-web-assembly
-		resolve := promiseHandlers[0]
-		reject := promiseHandlers[1]
-		errorConstructor := js.Global().Get("Error")
-		arrayConstructor := js.Global().Get("Array")
-		uint8ArrayConstructor := js.Global().Get("Uint8Array")
-
-		go func() {
+	promiseConstructor := js.Global().Get("Promise")
+	var makeHandler func(threadThunk func() (*LazyPostList, error)) js.Func
+	makeHandler = func(threadThunk func() (*LazyPostList, error)) js.Func {
+		return js.FuncOf(func(innerThis js.Value, promiseHandlers []js.Value) interface{} {
 			defer func() {
+				if err := recover(); err != nil {
+					fmt.Println(("panic occurred: "), err)
+				}
+			}()
+			if len(promiseHandlers) != 2 {
+				panic(fmt.Errorf("Incorrect number of promise handlers, expected 2 - got %d", len(promiseHandlers)))
+			}
+			// there's nothing we can do if these don't follow the API for promise
+			// mysterious runtime error will likely manifest.
+			// cf. https://stackoverflow.com/questions/67437284/how-to-throw-js-error-from-go-web-assembly
+			resolve := promiseHandlers[0]
+			reject := promiseHandlers[1]
+			errorConstructor := js.Global().Get("Error")
+			arrayConstructor := js.Global().Get("Array")
+			uint8ArrayConstructor := js.Global().Get("Uint8Array")
+
+			go func() {
 				defer func() {
+					defer func() {
+						if err := recover(); err != nil {
+							fmt.Println("Unrecoverable panic! rebooting")
+						}
+					}()
+
 					if err := recover(); err != nil {
-						fmt.Println("Unrecoverable panic! rebooting")
+						errorObject := errorConstructor.New(err)
+						reject.Invoke(errorObject)
 					}
 				}()
 
-				if err := recover(); err != nil {
-					errorObject := errorConstructor.New(err)
-					reject.Invoke(errorObject)
-				}
-			}()
-
-			if len(promiseArgs) != 2 {
-				err := fmt.Errorf("Expected exactly 2 arguments")
-				errorObject := errorConstructor.New(err.Error())
-				reject.Invoke(errorObject)
-			} else {
-				rawIdent := promiseArgs[0]
-				rawRkey := promiseArgs[1]
-
-				thread, err := fetchThread(rawIdent.String(), rawRkey.String())
+				thread, err := threadThunk()
 				errorObject := js.Undefined()
 				if err != nil {
 					errorObject = errorConstructor.New(err)
-				}
-				if len(thread) < 1 {
 					reject.Invoke(errorObject)
 				} else {
-					postCount := len(thread)
-					// must be generic because apparently ... spreading doesn't lower types as needed?
-					threadJS := make([](any), 0, postCount)
-					for postCount = postCount - 1; postCount >= 0; postCount = postCount - 1 {
-						postBytes, err := json.Marshal(thread[postCount])
-						if err != nil {
-							panic(err)
-						}
-						var postBytesJS js.Value = uint8ArrayConstructor.New(len(postBytes))
-						js.CopyBytesToJS(postBytesJS, postBytes)
-						threadJS = append(threadJS, postBytesJS)
+					if thread.post == nil {
+						panic(fmt.Errorf("post field should never be nil"))
 					}
-					var threadBytesJS js.Value = arrayConstructor.New(threadJS...)
-					var returnVal = arrayConstructor.New(threadBytesJS, errorObject)
+
+					postBytes, err := json.Marshal(thread.post)
+					if err != nil {
+						panic(err)
+					}
+					var postBytesJS js.Value = uint8ArrayConstructor.New(len(postBytes))
+					js.CopyBytesToJS(postBytesJS, postBytes)
+
+					var maybeParent js.Value = js.Undefined()
+					if thread.maybeParent != nil {
+						maybeParent = promiseConstructor.New(makeHandler(*(thread.maybeParent)))
+					}
+
+					var returnVal js.Value = arrayConstructor.New(postBytesJS, maybeParent)
 
 					resolve.Invoke(returnVal)
 				}
 
-			}
-		}()
+			}()
 
-		return nil
-	})
+			return nil
+		})
+	}
 
-	promiseConstructor := js.Global().Get("Promise")
-	return promiseConstructor.New(handler)
+	fetchThreadBootStrap := func() (*LazyPostList, error) {
+		if len(promiseArgs) != 2 {
+			err := fmt.Errorf("Expected exactly 2 arguments")
+			return nil, err
+		} else {
+			rawIdent := promiseArgs[0]
+			rawRkey := promiseArgs[1]
+
+			threadThunk := fetchThread(rawIdent.String(), rawRkey.String())
+			return threadThunk()
+		}
+	}
+
+	return promiseConstructor.New(makeHandler(fetchThreadBootStrap))
 }
 
 func main() {
