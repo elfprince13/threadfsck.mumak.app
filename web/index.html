@@ -34,6 +34,24 @@
         </blockquote>
         <script async src="https://embed.bsky.app/static/embed.js" charset="utf-8"></script>
 -->
-
+        <script>
+          /*
+          p = (async () => {
+            let result = []
+            nextThunk = () => FsckThreads.fetchThread("elfprince13.mumak.app", "3kmh2hea4f42j");
+            while (nextThunk !== undefined) {
+              try {
+                [post, nextThunk] = await nextThunk();
+                result.push(post)
+              } catch (err) {
+                console.log('caught err from WASM: ', err)
+                result.push(err);
+                nextThunk = undefined
+              }
+            }
+            return result
+          })()
+          */
+        </script>
   </body>
 </html>

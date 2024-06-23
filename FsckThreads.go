@@ -211,7 +211,12 @@ func fetchThreadJSAsync(this js.Value, promiseArgs []js.Value) interface{} {
 
 					var maybeParent js.Value = js.Undefined()
 					if thread.maybeParent != nil {
-						maybeParent = promiseConstructor.New(makeHandler(*(thread.maybeParent)))
+						// promise constructor starts executing the asynchronous code right away
+						// so wrap it in a function to avoid executing the promise until
+						// our caller sees it.
+						maybeParent = js.FuncOf(func(thunkThis js.Value, unused []js.Value) any {
+							return promiseConstructor.New(makeHandler(*(thread.maybeParent)))
+						}).Value
 					}
 
 					var returnVal js.Value = arrayConstructor.New(postBytesJS, maybeParent)
