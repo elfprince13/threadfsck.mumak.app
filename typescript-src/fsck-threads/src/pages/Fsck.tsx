@@ -1,13 +1,15 @@
 import { useParams } from 'react-router-dom'
 import { useGo } from '../go/go'
-import { lazy } from 'react'
+import { useEffect, useState } from 'react'
 
 // depends on vite's webassembly support
 
 import wasmUrl  from '../assets/built/app.wasm?url'
 import { useMemo } from 'react'
-
-type FsckThreads_t = { fetchThread? : (handle: string, rkey: string) => Promise<[Array<Uint8Array>, Error | undefined]>}
+type MaybeFetchParent = undefined | (() => LazyThread)
+type LazyThread = Promise<[Uint8Array, MaybeFetchParent]>
+type FetchThread = (handle: string, rkey: string) => LazyThread
+type FsckThreads_t = { fetchThread? : FetchThread}
 declare global {
     export interface Window {
       FsckThreads : FsckThreads_t
@@ -16,13 +18,73 @@ declare global {
 
 window.FsckThreads = {}
 
+export const ThreadLoader = (props : {nextPost : () => LazyThread}) => {
+    console.log("first nextPost", props.nextPost)
+    // stupid shenanigans: useState tries to "helpfully" unpack function values
+    // without knowing if the function has the right type to do so.
+    const [ nextPost, setNextPost ] = useState<MaybeFetchParent>((() => props.nextPost))
+    const [ postsSoFar, setPostsSoFar ] = useState<Array<Error | Uint8Array>>([])
+
+    useEffect(() => {
+        console.log("ThreadLoader: effect handler running")
+        async function fetchPosts() {
+            console.log("Inside fetchPosts, nextPost is ", nextPost, " postsSoFar is ", postsSoFar)
+            if ( nextPost === undefined ) {
+                console.log("done fetching all posts!")
+            } else if ( typeof(nextPost) === 'function') {
+              console.log("Invoking nextPost")
+              try {
+                const [post, nextThunk] = await nextPost();
+                console.log(`received post (${typeof(post)}) and nextThunk (${typeof(nextThunk)})`)
+                // stupid shenanigans: useState tries to "helpfully" unpack function values
+                // without knowing if the function has the right type to do so.
+                setPostsSoFar(postsSoFar.concat([post]))
+                setNextPost((() => nextThunk))
+              } catch (err) {
+                console.log('caught err from WASM: ', err)
+                if (err instanceof Error) {
+                    setPostsSoFar(postsSoFar.concat([err]));
+                    setNextPost(undefined)
+                } else {
+                    console.log("YIKE! Not even a real error ", err)
+                    // don't know what this is
+                    throw err
+                }
+              }
+            } else {
+                console.log("oops, not a function or undefined?", nextPost)
+                throw new TypeError(`undefined | (() => LazyThread) expected, received: ${nextPost}`)
+            }
+        }
+        console.log("ThreadLoading: Calling fetchPosts")
+        fetchPosts()
+    }, [nextPost, postsSoFar])
+
+    return <>
+        <>{ (() =>
+        ((nextPost === undefined) 
+         ? <div className="alert alert-success" role="alert">Got the thread! ({postsSoFar.length} results)</div>
+         : <div className="alert alert-info" role="alert">Fetching the thread! ({postsSoFar.length} / ? results)</div>))()
+        }</>
+        
+        {/* <>{ () =>
+            <div className="alert alert-danger" role="alert">Something blew up while accessing the thread: {err.name} </div>
+        
+        }</> */}
+        
+    </>
+
+}
+
 
 export const FsckThread = () => {
-    const { handle } = useParams<"handle">() || "";
-    const { rkey } = useParams<"rkey">() || "";
+    const handle = useParams<"handle">().handle || "";
+    const rkey = useParams<"rkey">().rkey || "";
     const bskyURL = useMemo(() => `bsky://profile/${handle}/post/${rkey}`, [handle, rkey])
 
     const goIsLoading = useGo(wasmUrl, [], {BIND_FUNCTIONS_TO_GLOBAL : "FsckThreads"})
+
+
     console.log("have access to rkey and handle now!")
     return (
         <>
@@ -39,22 +101,7 @@ export const FsckThread = () => {
                             // apparently type checking figures out this can't be undefined
                             // only if we assign it to a local
                             const fetchThread = window.FsckThreads.fetchThread
-                            try {
-                                return <>{lazy(() => {
-                                    const fetchPromise = fetchThread(handle || "", rkey || "");
-                                    const compPromise = fetchPromise.then(result => {
-                                        return {default : () => (<div className="alert alert-success">Got the thread!</div>) }
-                                    });
-                                    return compPromise;
-                                })}</>
-                            } catch (err : any) {
-                                if (err instanceof Error) {
-                                    return (<div className="alert alert-danger" role="alert">Something blew up while accessing the thread: {err.name} </div>)
-                                } else {
-                                    // dafuq is this - rethrow
-                                    throw err;
-                                }
-                            }
+                            return (<ThreadLoader nextPost={(() => fetchThread(handle, rkey))} />)
                         })())
                 )
             }
