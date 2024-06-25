@@ -246,7 +246,7 @@ export const ThreadLoader = (props : {rootLink : AtUri, nextPost : () => LazyThr
         }</>
         
         <>{ 
-            orderedPosts.map((postOrError, index) => (<PostOrError maybePost={postOrError.post} link={postOrError.link} key={index} />))
+            orderedPosts.map((postOrError, index) => (<PostOrError maybePost={postOrError.post} link={postOrError.link} key={orderedPosts.length - index} />))
         }</>
         
     </>
