@@ -145,18 +145,19 @@ export const DisplayPost = (props : {post : AppBskyFeedPost.Record, link?: AtUri
 
 export const PostOrError = (props : {maybePost : Error | AppBskyFeedPost.Record, link?: AtUri}) => {
     const maybePost = props.maybePost
+    const link = props.link
 
     const tag = useMemo(() => {
         if (maybePost instanceof Error) {
             const error : Error = maybePost
-            return (<DisplayError error={error} link={props.link} />)
+            return (<DisplayError error={error} link={link} />)
         } else if (AppBskyFeedPost.isRecord(maybePost)) {
-            return (<DisplayPost post={maybePost} link={props.link} />)
+            return (<DisplayPost post={maybePost} link={link} />)
         } else {
             console.log("Not an Error | Uint8Array: ", maybePost)
             return (<DisplayError error = {new TypeError(`Expected Error | Uint8Array, received: ${maybePost}`)} />)
         }
-    }, [maybePost])
+    }, [maybePost, link])
 
     return tag
 }
@@ -167,7 +168,6 @@ type MaybePostAndLink = {
 }
 
 export const ThreadLoader = (props : {rootLink : AtUri, nextPost : () => LazyThread}) => {
-    console.log("first nextPost", props.nextPost)
     // stupid shenanigans: useState tries to "helpfully" unpack function values
     // without knowing if the function has the right type to do so.
     const [ nextPost, setNextPost ] = useState<MaybeFetchParent>((() => props.nextPost))
@@ -175,15 +175,12 @@ export const ThreadLoader = (props : {rootLink : AtUri, nextPost : () => LazyThr
     const [ nextLink, setNextLink ] = useState<AtUri | undefined>(props.rootLink)
 
     useEffect(() => {
-        console.log("ThreadLoader: effect handler running")
         async function fetchPosts() {
             let keepTrying = false
             let gotPost = false
-            console.log("Inside fetchPosts, nextPost is ", nextPost, " postsSoFar is ", postsSoFar)
             if ( nextPost === undefined ) {
                 console.log("done fetching all posts!")
             } else if ( typeof(nextPost) === 'function') {
-              console.log("Invoking nextPost")
               try {
                 const [postBytes, nextThunk] = await nextPost();
                 console.log(`received post (${typeof(postBytes)}) and nextThunk (${typeof(nextThunk)})`)        
@@ -236,7 +233,6 @@ export const ThreadLoader = (props : {rootLink : AtUri, nextPost : () => LazyThr
                 throw new TypeError(`undefined | (() => LazyThread) expected, received: ${nextPost}`)
             }
         }
-        console.log("ThreadLoading: Calling fetchPosts")
         fetchPosts()
     }, [nextPost, postsSoFar, nextLink])
 
@@ -266,8 +262,6 @@ export const FsckThread = () => {
 
     const goIsLoading = useGo(wasmUrl, [], {BIND_FUNCTIONS_TO_GLOBAL : "FsckThreads"})
 
-
-    console.log("have access to rkey and handle now!")
     return (
         <>
             <header className="d-flex flex-wrap justify-content-center py-3 mb-4 border-bottom">
