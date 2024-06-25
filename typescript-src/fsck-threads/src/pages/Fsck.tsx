@@ -1,8 +1,8 @@
 import { useParams } from 'react-router-dom'
 import { useGo } from '../go/go'
 import { ReactElement, useEffect, useMemo, useState } from 'react'
-import { AppBskyFeedPost } from '@atproto/api'
-import { AtUri } from '@atproto/api'
+import { AppBskyFeedPost, AppBskyRichtextFacet } from '@atproto/api'
+import { AtUri, RichText, RichTextProps } from '@atproto/api'
 
 // depends on vite's webassembly support
 import wasmUrl  from '../assets/built/app.wasm?url'
@@ -23,6 +23,42 @@ const decoder = new TextDecoder('utf-8')
 function bytesToJson(bytes : Uint8Array) {
     const text = decoder.decode(bytes)
     return JSON.parse(text)
+}
+
+function handleToLink(handle : string) {
+    return `https://bsky.app/profile/${handle}`
+}
+
+function tagToLink(tag : string) {
+    return `https://bsky.app/hashtag/${tag}`
+}
+
+export const DisplayRichText = (props : RichTextProps) => {
+    const rt = new RichText(props)
+    const segmentGenerator = rt.segments();
+    const segments = [...segmentGenerator]
+    return segments.map((segment, index) => {
+        {
+            const maybeLink = segment.link
+            // todo this gets called twice - once here and once by the link property
+            if (AppBskyRichtextFacet.isLink(maybeLink)) {
+                return <a href={maybeLink.uri} className="primary-link" key={index}>{segment.text}</a>
+            }
+        }
+        {
+            const maybeMention = segment.mention
+            if (AppBskyRichtextFacet.isMention(maybeMention)) {
+                return <a href={handleToLink(maybeMention.did)} className="primary-link" key={index}>{segment.text}</a>
+            }
+        }
+        {
+            const maybeTag = segment.tag
+            if (AppBskyRichtextFacet.isTag(maybeTag)) {
+                return <a href={tagToLink(maybeTag.tag)} className="primary-link" key={index}>{segment.text}</a>
+            }
+        }
+        return <>{segment.text}</>
+    })
 }
 
 export const DisplayError = (props : {error : Error, link?: AtUri}) => {
@@ -55,7 +91,9 @@ export const DisplayPost = (props : {post : AppBskyFeedPost.Record, link?: AtUri
             A post from bluesky!
         </div>
         <div className="card-body">
-            <p className="card-text">{props.post.text}</p>
+            <p className="card-text">
+                <DisplayRichText text={props.post.text} facets={props.post.facets} />
+            </p>
         </div>
         <div className="card-footer text-muted">
             {stamplink}
