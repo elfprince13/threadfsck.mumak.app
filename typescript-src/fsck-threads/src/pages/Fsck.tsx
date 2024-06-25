@@ -1,11 +1,12 @@
 import { useParams } from 'react-router-dom'
 import { useGo } from '../go/go'
-import { ReactElement, useEffect, useMemo, useState } from 'react'
-import { AppBskyFeedPost, AppBskyRichtextFacet } from '@atproto/api'
-import { AtUri, RichText, RichTextProps } from '@atproto/api'
+import { Fragment, ReactElement, useEffect, useMemo, useState } from 'react'
+import { AppBskyActorDefs, AppBskyActorProfile, AppBskyFeedPost, AppBskyRichtextFacet } from '@atproto/api'
+import { AtUri, BskyAgent, RichText, RichTextProps } from '@atproto/api'
 
 // depends on vite's webassembly support
 import wasmUrl  from '../assets/built/app.wasm?url'
+import { ProfileViewDetailed } from '@atproto/api/dist/client/types/app/bsky/actor/defs'
 
 type MaybeFetchParent = undefined | (() => LazyThread)
 type LazyThread = Promise<[Uint8Array, MaybeFetchParent]>
@@ -33,6 +34,49 @@ function tagToLink(tag : string) {
     return `https://bsky.app/hashtag/${tag}`
 }
 
+const agent = new BskyAgent({
+    service: 'https://public.api.bsky.app'
+})
+
+export const DisplayUserCardHeader = (props : {handle : string}) => {
+    const handle = props.handle
+    const [ profileData, setProfileData ] = useState<undefined | AppBskyActorDefs.ProfileViewDetailed>(undefined)
+
+    useEffect(() => {
+        async function getProfile() {
+            try {
+                const {success, headers, data} = await agent.getProfile({actor : handle})
+                if(!success) {
+                    console.log("Failed to access profile =(", headers, data)
+                    throw new Error("Could not access profile!")
+                }
+                setProfileData(data)
+            } catch(err) {
+                // arcane nonsense, not a real error from us!
+                if(!(err instanceof Error)) {
+                    throw err
+                }
+            }
+        }
+        if(profileData === undefined) {
+            getProfile()
+        }
+    }, [profileData, handle])
+
+    return <div className="card-header">
+            <a href={handleToLink(props.handle)} className="link-secondary">
+                {
+                    ((profileData === undefined)
+                        ? handle
+                        : (<>
+                            <img src={profileData.avatar} className="img-fluid" style={{maxWidth: 48, maxHeight: 48, borderRadius: 24}} alt={`Profile picture for ${profileData.displayName} (${props.handle})`} />
+                            {profileData.displayName}
+                           </>))
+                }
+            </a>
+    </div>
+}
+
 export const DisplayRichText = (props : RichTextProps) => {
     const rt = new RichText(props)
     const segmentGenerator = rt.segments();
@@ -57,7 +101,7 @@ export const DisplayRichText = (props : RichTextProps) => {
                 return <a href={tagToLink(maybeTag.tag)} className="primary-link" key={index}>{segment.text}</a>
             }
         }
-        return <>{segment.text}</>
+        return <Fragment key={index}>{segment.text}</Fragment>
     })
 }
 
@@ -87,9 +131,7 @@ export const DisplayPost = (props : {post : AppBskyFeedPost.Record, link?: AtUri
             : ((e: ReactElement) => (<a href={`https://bsky.app/profile/${link.hostname}/post/${link.rkey}`} className="link-secondary">{e}</a>)))(<>Posted {timestamp}</>)
         ), [link, timestamp])
     return (<div className="card">
-        <div className="card-header">
-            A post from bluesky!
-        </div>
+        <DisplayUserCardHeader handle={(link === undefined) ? "<UNKNOWN HANDLE>" : link.hostname} />
         <div className="card-body">
             <p className="card-text">
                 <DisplayRichText text={props.post.text} facets={props.post.facets} />
