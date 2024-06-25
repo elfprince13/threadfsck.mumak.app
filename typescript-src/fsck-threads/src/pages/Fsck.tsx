@@ -48,7 +48,7 @@ export const DisplayPost = (props : {post : AppBskyFeedPost.Record, link?: AtUri
     const stamplink = useMemo((() => 
         ((link === undefined)
             ? ((e: ReactElement) => e)
-            : ((e: ReactElement) => (<a href={link.toString()} className="link-secondary">{e}</a>)))(<>Posted {timestamp}</>)
+            : ((e: ReactElement) => (<a href={`https://bsky.app/profile/${link.hostname}/post/${link.rkey}`} className="link-secondary">{e}</a>)))(<>Posted {timestamp}</>)
         ), [link, timestamp])
     return (<div className="card">
         <div className="card-header">
