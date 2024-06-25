@@ -45,6 +45,7 @@ export const DisplayUserCardHeader = (props : {handle : string}) => {
     useEffect(() => {
         async function getProfile() {
             try {
+                console.log("Getting profile for ", handle)
                 const {success, headers, data} = await agent.getProfile({actor : handle})
                 if(!success) {
                     console.log("Failed to access profile =(", headers, data)
@@ -64,13 +65,14 @@ export const DisplayUserCardHeader = (props : {handle : string}) => {
     }, [profileData, handle])
 
     return <div className="card-header">
-            <a href={handleToLink(props.handle)} className="link-secondary">
+            <a href={handleToLink(handle)} className="link-secondary">
                 {
                     ((profileData === undefined)
                         ? handle
                         : (<>
-                            <img src={profileData.avatar} className="img-fluid" style={{maxWidth: 48, maxHeight: 48, borderRadius: 24}} alt={`Profile picture for ${profileData.displayName} (${props.handle})`} />
-                            {profileData.displayName}
+                            <img src={profileData.avatar} className="img-fluid float-start" style={{maxWidth: 48, maxHeight: 48, borderRadius: 24}} alt={`Profile picture for ${profileData.displayName} (${props.handle})`} />
+                            {profileData.displayName}<br/>
+                            {handle}
                            </>))
                 }
             </a>
@@ -138,7 +140,9 @@ export const DisplayPost = (props : {post : AppBskyFeedPost.Record, link?: AtUri
             </p>
         </div>
         <div className="card-footer text-muted">
-            {stamplink}
+            {stamplink} {(props.post.tags || []).map((tag) => {
+                return <a href={tagToLink(tag)} key={tag}>tag</a>
+            })}
         </div>
     </div>)
 }
@@ -267,10 +271,10 @@ export const FsckThread = () => {
             <header className="d-flex flex-wrap justify-content-center py-3 mb-4 border-bottom">
                 Archiving thread from leaf at <a href={bskyURL} className="link-info">{bskyURL}</a>
             </header>
-            <section className="py-5 text-center container">
+            <section className="py-5 text-left container">
             {
                 (goIsLoading
-                    ? (<div className="alert alert-primary" role="alert">Still Loading</div>)
+                    ? (<div className="alert alert-primary text-center" role="alert">Still Loading</div>)
                     : ((window.FsckThreads.fetchThread === undefined)
                         ? (<div className="alert alert-danger" role="alert">Dynamic linking of Go module failed. Could not access fetchThread() </div>)
                         : (() => {
