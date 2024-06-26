@@ -6,7 +6,7 @@
   "scripts": {
     "go": "bash -c 'pushd ../..; ln -s typescript-src/fsck-threads/src/assets/built/app.wasm web/built-go/app.wasm; cp \"$(go env GOROOT)/misc/wasm/wasm_exec.js\" web/; GOOS=js GOARCH=wasm go build -o typescript-src/fsck-threads/src/assets/built/app.wasm && popd'",
     "dev": "npm run go && vite",
-    "build": "npm run go && tsc && vite build",
+    "build": "npm run go && tsc && vite build --emptyOutDir",
     "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
     "preview": "npm run go && vite preview"
   },

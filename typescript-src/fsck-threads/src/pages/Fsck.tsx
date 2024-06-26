@@ -1,12 +1,11 @@
 import { useParams } from 'react-router-dom'
 import { useGo } from '../go/go'
 import { Fragment, ReactElement, useEffect, useMemo, useState } from 'react'
-import { AppBskyActorDefs, AppBskyActorProfile, AppBskyFeedPost, AppBskyRichtextFacet } from '@atproto/api'
+import { AppBskyActorDefs, AppBskyFeedPost, AppBskyRichtextFacet } from '@atproto/api'
 import { AtUri, BskyAgent, RichText, RichTextProps } from '@atproto/api'
 
 // depends on vite's webassembly support
 import wasmUrl  from '../assets/built/app.wasm?url'
-import { ProfileViewDetailed } from '@atproto/api/dist/client/types/app/bsky/actor/defs'
 
 type MaybeFetchParent = undefined | (() => LazyThread)
 type LazyThread = Promise<[Uint8Array, MaybeFetchParent]>
