@@ -1,4 +1,3 @@
-
 type ENOSYS = Error & {code : string}
 const enosys = function(): ENOSYS {
 	const err = new Error("not implemented");
@@ -16,7 +15,7 @@ let outputBuf = "";
 type FSCallback = (...args : any[]) => void
 const fsShim = {
 	constants: { O_WRONLY: -1, O_RDWR: -1, O_CREAT: -1, O_TRUNC: -1, O_APPEND: -1, O_EXCL: -1 }, // unused
-	writeSync(fd: number, buf: Uint8Array) {
+	writeSync(_fd: number, buf: Uint8Array) {
 		outputBuf += decoder.decode(buf);
 		const nl = outputBuf.lastIndexOf("\n");
 		if (nl != -1) {
@@ -33,29 +32,29 @@ const fsShim = {
 		const n = this.writeSync(fd, buf);
 		callback(null, n);
 	},
-	chmod(path: string, mode: number, callback: FSCallback) { callback(enosys()); },
-	chown(path: string, uid: number, gid: number, callback: FSCallback) { callback(enosys()); },
-	close(fd: number, callback: FSCallback) { callback(enosys()); },
-	fchmod(fd: number, mode: number, callback: FSCallback) { callback(enosys()); },
-	fchown(fd: number, uid: number, gid: number, callback: FSCallback) { callback(enosys()); },
-	fstat(fd: number, callback: FSCallback) { callback(enosys()); },
-	fsync(fd: number, callback: FSCallback) { callback(null); },
-	ftruncate(fd: number, length: number, callback: FSCallback) { callback(enosys()); },
-	lchown(path: string, uid: number, gid: number, callback: FSCallback) { callback(enosys()); },
-	link(path: string, link: string, callback: FSCallback) { callback(enosys()); },
-	lstat(path: string, callback: FSCallback) { callback(enosys()); },
-	mkdir(path: string, perm: number, callback: FSCallback) { callback(enosys()); },
-	open(path: string, flags: number, mode: number, callback: FSCallback) { callback(enosys()); },
-	read(fd: number, buffer: Uint8Array, offse: number, length: number, position: number, callback: FSCallback) { callback(enosys()); },
-	readdir(path: string, callback: FSCallback) { callback(enosys()); },
-	readlink(path: string, callback: FSCallback) { callback(enosys()); },
-	rename(from: string, to: string, callback: FSCallback) { callback(enosys()); },
-	rmdir(path: string, callback: FSCallback) { callback(enosys()); },
-	stat(path: string, callback: FSCallback) { callback(enosys()); },
-	symlink(path: string, link: string, callback: FSCallback) { callback(enosys()); },
-	truncate(path: string, length: number, callback: FSCallback) { callback(enosys()); },
-	unlink(path: string, callback: FSCallback) { callback(enosys()); },
-	utimes(path: string, atime: number, mtime: number, callback: FSCallback) { callback(enosys()); },
+	chmod(_path: string, _mode: number, callback: FSCallback) { callback(enosys()); },
+	chown(_path: string, _uid: number, _gid: number, callback: FSCallback) { callback(enosys()); },
+	close(_fd: number, callback: FSCallback) { callback(enosys()); },
+	fchmod(_fd: number, _mode: number, callback: FSCallback) { callback(enosys()); },
+	fchown(_fd: number, _uid: number, _gid: number, callback: FSCallback) { callback(enosys()); },
+	fstat(_fd: number, callback: FSCallback) { callback(enosys()); },
+	fsync(_fd: number, callback: FSCallback) { callback(null); },
+	ftruncate(_fd: number, _length: number, callback: FSCallback) { callback(enosys()); },
+	lchown(_path: string, _uid: number, _gid: number, callback: FSCallback) { callback(enosys()); },
+	link(_path: string, _link: string, callback: FSCallback) { callback(enosys()); },
+	lstat(_path: string, callback: FSCallback) { callback(enosys()); },
+	mkdir(_path: string, _perm: number, callback: FSCallback) { callback(enosys()); },
+	open(_path: string, _flags: number, _mode: number, callback: FSCallback) { callback(enosys()); },
+	read(_fd: number, _buffer: Uint8Array, _offset: number, _length: number, _position: number, callback: FSCallback) { callback(enosys()); },
+	readdir(_path: string, callback: FSCallback) { callback(enosys()); },
+	readlink(_path: string, callback: FSCallback) { callback(enosys()); },
+	rename(_from: string, _to: string, callback: FSCallback) { callback(enosys()); },
+	rmdir(_path: string, callback: FSCallback) { callback(enosys()); },
+	stat(_path: string, callback: FSCallback) { callback(enosys()); },
+	symlink(_path: string, _link: string, callback: FSCallback) { callback(enosys()); },
+	truncate(_path: string, _length: number, callback: FSCallback) { callback(enosys()); },
+	unlink(_path: string, callback: FSCallback) { callback(enosys()); },
+	utimes(_path: string, _atime: number, _mtime: number, callback: FSCallback) { callback(enosys()); },
 };
 
 declare global {
@@ -473,7 +472,7 @@ export class Go {
 			console.warn("exit code:", code);
 		}
 	};
-	_resolveExitPromise = (value: unknown) => {}
+	_resolveExitPromise = (_value: unknown) => {}
 	_exitPromise = new Promise((resolve) => {
 		this._resolveExitPromise = resolve;
 	});
