@@ -4,7 +4,7 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "go": "pushd ../..; ln -s typescript-src/fsck-threads/src/assets/built/app.wasm web/built-go/app.wasm; cp \"$(go env GOROOT)/misc/wasm/wasm_exec.js\" web/; GOOS=js GOARCH=wasm go build -o typescript-src/fsck-threads/src/assets/built/app.wasm && popd",
+    "go": "bash -c 'pushd ../..; ln -s typescript-src/fsck-threads/src/assets/built/app.wasm web/built-go/app.wasm; cp \"$(go env GOROOT)/misc/wasm/wasm_exec.js\" web/; GOOS=js GOARCH=wasm go build -o typescript-src/fsck-threads/src/assets/built/app.wasm && popd'",
     "dev": "npm run go && vite",
     "build": "npm run go && tsc && vite build",
     "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
