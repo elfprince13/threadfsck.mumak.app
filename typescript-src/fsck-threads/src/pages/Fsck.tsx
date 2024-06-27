@@ -1,28 +1,42 @@
 import { useParams } from 'react-router-dom'
 import { useGo } from '../go/go'
 import { Fragment, ReactElement, useEffect, useMemo, useState } from 'react'
-import { AppBskyActorDefs, AppBskyFeedPost, AppBskyRichtextFacet } from '@atproto/api'
-import { AtUri, BskyAgent, RichText, RichTextProps } from '@atproto/api'
+import { /*AppBskyActorDefs,*/ AppBskyActorProfile, AppBskyEmbedExternal, AppBskyEmbedImages, AppBskyEmbedRecord, AppBskyEmbedRecordWithMedia, AppBskyFeedPost, AppBskyRichtextFacet, jsonStringToLex } from '@atproto/api'
+import { AtUri, /*BskyAgent,*/ RichText, RichTextProps } from '@atproto/api'
 
 // depends on vite's webassembly support
 import wasmUrl  from '../assets/built/app.wasm?url'
 
 type MaybeFetchParent = undefined | (() => LazyThread)
 type LazyThread = Promise<[Uint8Array, MaybeFetchParent]>
+type ResolveIdent = (handle: string) => Promise<string>
 type FetchThread = (handle: string, rkey: string) => LazyThread
-type FsckThreads_t = { fetchThread? : FetchThread}
+type FetchProfile = (handle: string) => Promise<Uint8Array>
+type FsckThreads_t = { resolveIdent: ResolveIdent, fetchThread : FetchThread, fetchProfile : FetchProfile}
 declare global {
     export interface Window {
       FsckThreads : FsckThreads_t
     }
   }
 
-window.FsckThreads = {}
+window.FsckThreads = (function(): FsckThreads_t {
+    const stay = function(): never {
+        throw new Error("Go has no yet loaded!")
+    }
+    return {
+        resolveIdent: () => new Promise<string>(stay),
+        fetchThread: () => new Promise<[Uint8Array, MaybeFetchParent]>(stay),
+        fetchProfile: () => new Promise<Uint8Array>(stay)
+    }
+})()
+
+const UNKNOWN_HANDLE = "<UNKNOWN HANDLE>"
+
 
 const decoder = new TextDecoder('utf-8')
-function bytesToJson(bytes : Uint8Array) {
+function bytesToLex(bytes : Uint8Array) {
     const text = decoder.decode(bytes)
-    return JSON.parse(text)
+    return jsonStringToLex(text)
 }
 
 function handleToLink(handle : string) {
@@ -33,25 +47,35 @@ function tagToLink(tag : string) {
     return `https://bsky.app/hashtag/${tag}`
 }
 
-const agent = new BskyAgent({
-    service: 'https://public.api.bsky.app'
-})
-
-export const DisplayUserCardHeader = (props : {handle : string}) => {
-    const handle = props.handle
-    const [ profileData, setProfileData ] = useState<undefined | AppBskyActorDefs.ProfileViewDetailed>(undefined)
+export const DisplayUserCardHeader = (props : {did : string}) => {
+    const handle = props.did
+    const [ profileData, setProfileData ] = useState<undefined | AppBskyActorProfile.Record>(undefined)
 
     useEffect(() => {
         async function getProfile() {
+            if (handle === UNKNOWN_HANDLE) {
+                console.log("not ready to fetch profile")
+                return
+            }
             try {
                 console.log("Getting profile for ", handle)
-                const {success, headers, data} = await agent.getProfile({actor : handle})
-                if(!success) {
-                    console.log("Failed to access profile =(", headers, data)
-                    throw new Error("Could not access profile!")
+                const profileBytes = await window.FsckThreads.fetchProfile(handle)
+                const profile = bytesToLex(profileBytes)
+                if ( AppBskyActorProfile.isRecord(profile)) {
+                    const res = AppBskyActorProfile.validateRecord(profile)
+                    if (res.success ) {
+                        console.log("got a profile!", profile)
+                        setProfileData(profile)
+                    } else {
+                        console.log("invalid profile =(?!?", profile)
+                        throw res.error
+                    }
+                } else {
+                    console.log("Not an AppBskyActorProfile: ", profile)
+                    throw new TypeError(`Expected AppBskyActorProfile, received: ${profile}`)
                 }
-                setProfileData(data)
             } catch(err) {
+                console.log("Failed to get profile", err)
                 // arcane nonsense, not a real error from us!
                 if(!(err instanceof Error)) {
                     throw err
@@ -69,7 +93,7 @@ export const DisplayUserCardHeader = (props : {handle : string}) => {
                     ((profileData === undefined)
                         ? handle
                         : (<>
-                            <img src={profileData.avatar} className="img-fluid float-start" style={{maxWidth: 48, maxHeight: 48, borderRadius: 24}} alt={`Profile picture for ${profileData.displayName} (${props.handle})`} />
+                            <img src={`https://cdn.bsky.app/img/avatar/plain/${handle}/${profileData.avatar?.ref.toString()}@${profileData.avatar?.mimeType.split("/").slice(-1)[0]}`} className="img-fluid float-start" style={{maxWidth: 48, maxHeight: 48, borderRadius: 24}} alt={`Profile picture for ${profileData.displayName} (${handle})`} />
                             {profileData.displayName}<br/>
                             {handle}
                            </>))
@@ -123,20 +147,64 @@ export const DisplayError = (props : {error : Error, link?: AtUri}) => {
     )
 }
 
-export const DisplayPost = (props : {post : AppBskyFeedPost.Record, link?: AtUri}) => {
+type EmbedUnion = AppBskyEmbedImages.Main
+                | AppBskyEmbedExternal.Main
+                | AppBskyEmbedRecord.Main
+                | AppBskyEmbedRecordWithMedia.Main
+                | { $type: string; [k: string]: unknown }
+export const DisplayEmbed = (props : {embed : EmbedUnion, maxEmbedDepth: number}) => {
+    if (AppBskyEmbedImages.isMain(props.embed)) {
+        return
+    } else {
+        return <div className="card">
+            <div className="card-body">
+                <p className="card-text">
+                    Unknown embed {props.embed.$type as string}!
+                </p>
+            </div>
+        </div>
+    }
+}
+
+export const DisplayPost = (props : {post : AppBskyFeedPost.Record, link?: AtUri, maxEmbedDepth?: number}) => {
     const link = props.link
     const timestamp = props.post.createdAt
+    const handle = (link || {hostname: undefined}).hostname
+
+
+    const [ did, setDid ] = useState<undefined | string>(undefined)
+
+    useEffect(() => {
+        async function resolveDid() {
+            try {
+                const did = await window.FsckThreads.resolveIdent(handle || "")
+                setDid(did)
+            } catch(err) {
+                console.log("Failed to resolve did", err)
+                // arcane nonsense, not a real error from us!
+                if(!(err instanceof Error)) {
+                    throw err
+                }
+            }
+        }
+
+        resolveDid();
+    }, [handle])
+
     const stamplink = useMemo((() => 
         ((link === undefined)
             ? ((e: ReactElement) => e)
-            : ((e: ReactElement) => (<a href={`https://bsky.app/profile/${link.hostname}/post/${link.rkey}`} className="link-secondary">{e}</a>)))(<>Posted {timestamp}</>)
-        ), [link, timestamp])
+            : ((e: ReactElement) => (<a href={`https://bsky.app/profile/${did}/post/${link.rkey}`} className="link-secondary">{e}</a>)))(<>Posted {timestamp}</>)
+        ), [did, link, timestamp])
     return (<div className="card">
-        <DisplayUserCardHeader handle={(link === undefined) ? "<UNKNOWN HANDLE>" : link.hostname} />
+        <DisplayUserCardHeader did={(did === undefined) ? UNKNOWN_HANDLE : did} />
         <div className="card-body">
             <p className="card-text">
                 <DisplayRichText text={props.post.text} facets={props.post.facets} />
             </p>
+            {
+                (props.post.embed === undefined) ? <></> : <DisplayEmbed embed={props.post.embed} maxEmbedDepth={1} />
+            }
         </div>
         <div className="card-footer text-muted">
             {stamplink} {(props.post.tags || []).map((tag) => {
@@ -193,7 +261,7 @@ export const ThreadLoader = (props : {rootLink : AtUri, nextPost : () => LazyThr
                 setNextPost((() => nextThunk))
                 keepTrying = true
 
-                const post = bytesToJson(postBytes)
+                const post = bytesToLex(postBytes)
                 if ( AppBskyFeedPost.isRecord(post)) {
                     const res = AppBskyFeedPost.validateRecord(post)
                     if (res.success) {
@@ -274,13 +342,12 @@ export const FsckThread = () => {
             {
                 (goIsLoading
                     ? (<div className="alert alert-primary text-center" role="alert">Still Loading</div>)
-                    : ((window.FsckThreads.fetchThread === undefined)
+                    : ((window.FsckThreads === undefined)
                         ? (<div className="alert alert-danger" role="alert">Dynamic linking of Go module failed. Could not access fetchThread() </div>)
                         : (() => {
                             // apparently type checking figures out this can't be undefined
                             // only if we assign it to a local
-                            const fetchThread = window.FsckThreads.fetchThread
-                            return (<ThreadLoader nextPost={(() => fetchThread(handle, rkey))} rootLink={atURI} />)
+                            return (<ThreadLoader nextPost={(() => window.FsckThreads.fetchThread(handle, rkey))} rootLink={atURI} />)
                         })())
                 )
             }

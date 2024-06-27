@@ -168,8 +168,9 @@ type FsckThreadsAPIState struct {
 }
 
 type FsckThreadsAPI struct {
-	fetchThread  func(rawIdent string, rawRkey string) func() (*LazyPostList, error)
-	fetchProfile func(rawIdent string) (*bsky.ActorProfile, error)
+	fetchThread     func(rawIdent string, rawRkey string) func() (*LazyPostList, error)
+	fetchProfile    func(rawIdent string) (*bsky.ActorProfile, error)
+	didFromRawIdent func(rawIdent string) (syntax.DID, error)
 }
 
 func fsckThreadsAPIFactory(ctx context.Context) FsckThreadsAPI {
@@ -217,17 +218,77 @@ func fsckThreadsAPIFactory(ctx context.Context) FsckThreadsAPI {
 		return apiState.repoAccess.fetchProfile(did)
 	}
 
-	return FsckThreadsAPI{fetchThread: fetchThread, fetchProfile: fetchProfile}
+	return FsckThreadsAPI{didFromRawIdent: didFromRawIdent, fetchThread: fetchThread, fetchProfile: fetchProfile}
 
 }
 
 type FsckThreadsJSAPI struct {
-	fetchThreadJSAsync  func(this js.Value, promiseArgs []js.Value) interface{}
-	fetchProfileJSAsync func(this js.Value, promiseArgs []js.Value) interface{}
+	didFromRawIdentJSAsync func(this js.Value, promiseArgs []js.Value) interface{}
+	fetchThreadJSAsync     func(this js.Value, promiseArgs []js.Value) interface{}
+	fetchProfileJSAsync    func(this js.Value, promiseArgs []js.Value) interface{}
 }
 
 func fsckThreadsJSAPIFactory() FsckThreadsJSAPI {
 	fsckThreadsAPI := fsckThreadsAPIFactory(context.Background())
+
+	didFromRawIdentJSAsync := func(this js.Value, promiseArgs []js.Value) interface{} {
+		promiseConstructor := js.Global().Get("Promise")
+		handler := js.FuncOf(func(innerThis js.Value, promiseHandlers []js.Value) interface{} {
+			defer func() {
+				if err := recover(); err != nil {
+					fmt.Println(("panic occurred: "), err)
+				}
+			}()
+			if len(promiseHandlers) != 2 {
+				panic(fmt.Errorf("Incorrect number of promise handlers, expected 2 - got %d", len(promiseHandlers)))
+			}
+			// there's nothing we can do if these don't follow the API for promise
+			// mysterious runtime error will likely manifest.
+			// cf. https://stackoverflow.com/questions/67437284/how-to-throw-js-error-from-go-web-assembly
+			resolve := promiseHandlers[0]
+			reject := promiseHandlers[1]
+			errorConstructor := js.Global().Get("Error")
+
+			if len(promiseArgs) != 1 {
+				err := fmt.Errorf("Expected exactly 2 arguments")
+				errorObject := errorConstructor.New(err)
+				reject.Invoke(errorObject)
+			}
+
+			rawIdent := promiseArgs[0]
+
+			go func() {
+				defer func() {
+					defer func() {
+						if err := recover(); err != nil {
+							fmt.Println("Unrecoverable panic! rebooting")
+						}
+					}()
+
+					if err := recover(); err != nil {
+						errorObject := errorConstructor.New(err)
+						reject.Invoke(errorObject)
+					}
+				}()
+
+				did, err := fsckThreadsAPI.didFromRawIdent(rawIdent.String())
+				errorObject := js.Undefined()
+				if err != nil {
+					errorObject = errorConstructor.New(err)
+					reject.Invoke(errorObject)
+				} else {
+					var returnVal js.Value = js.ValueOf(did.String())
+
+					resolve.Invoke(returnVal)
+				}
+
+			}()
+
+			return nil
+		})
+
+		return promiseConstructor.New(handler)
+	}
 
 	fetchThreadJSAsync := func(this js.Value, promiseArgs []js.Value) interface{} {
 		promiseConstructor := js.Global().Get("Promise")
@@ -336,7 +397,6 @@ func fsckThreadsJSAPIFactory() FsckThreadsJSAPI {
 			resolve := promiseHandlers[0]
 			reject := promiseHandlers[1]
 			errorConstructor := js.Global().Get("Error")
-			//arrayConstructor := js.Global().Get("Array")
 			uint8ArrayConstructor := js.Global().Get("Uint8Array")
 
 			if len(promiseArgs) != 1 {
@@ -388,8 +448,9 @@ func fsckThreadsJSAPIFactory() FsckThreadsJSAPI {
 	}
 
 	return FsckThreadsJSAPI{
-		fetchThreadJSAsync:  fetchThreadJSAsync,
-		fetchProfileJSAsync: fetchProfileJSAsync,
+		didFromRawIdentJSAsync: didFromRawIdentJSAsync,
+		fetchThreadJSAsync:     fetchThreadJSAsync,
+		fetchProfileJSAsync:    fetchProfileJSAsync,
 	}
 }
 
@@ -400,6 +461,7 @@ func main() {
 
 	targetObjName := os.Getenv("BIND_FUNCTIONS_TO_GLOBAL")
 	fsckThreadsObj := js.Global().Get(targetObjName)
+	fsckThreadsObj.Set("resolveIdent", js.FuncOf(jsAPI.didFromRawIdentJSAsync))
 	fsckThreadsObj.Set("fetchThread", js.FuncOf(jsAPI.fetchThreadJSAsync))
 	fsckThreadsObj.Set("fetchProfile", js.FuncOf(jsAPI.fetchProfileJSAsync))
 
